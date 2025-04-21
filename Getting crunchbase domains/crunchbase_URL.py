@@ -2,9 +2,7 @@ import os
 import time
 import random
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS # type: ignore
+from duckduckgo_search import DDGS  # type: ignore
 
 def search_crunchbase_url(company_name, potential_URLs):
     try:
@@ -16,28 +14,14 @@ def search_crunchbase_url(company_name, potential_URLs):
         print(f"Error processing URLs for {company_name}: {str(e)}")
         return None
 
-def search_with_retry(query, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            with DDGS() as ddgs:
-                results = list(ddgs.text(query, max_results=5))
-                return [r['href'] for r in results]
-        except Exception as e:
-            print(f"DDGS attempt {attempt + 1} failed: {str(e)}")
-            if attempt == max_retries - 1:
-                try:
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                    }
-                    url = f"https://html.duckduckgo.com/html/?q={requests.utils.quote(query)}"
-                    response = requests.get(url, headers=headers, timeout=10)
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    return [a['href'] for a in soup.select('a.result__url')][:5]
-                except Exception as fallback_error:
-                    print(f"Fallback search failed: {str(fallback_error)}")
-                    return []
-            time.sleep(random.uniform(2, 5))
-    return []
+def search_duckduckgo(query, num_results):
+    try:
+        with DDGS() as ddgs:
+            search_results = list(ddgs.text(query, max_results=num_results))
+            return [search_result['href'] for search_result in search_results]
+    except Exception as e:
+        print(f"Error searching DuckDuckGo: {str(e)}")
+        return []
 
 def find_crunchbase_urls(start_row, end_row):
     dataframe = pd.read_excel(INPUT_FILE)
@@ -53,17 +37,20 @@ def find_crunchbase_urls(start_row, end_row):
         print(f"Processing {i}/{len(companies)}: {company}")
         
         query = f"{company} site:crunchbase.com"
-        potential_urls = search_with_retry(query)
+        potential_urls = search_duckduckgo(query, num_results=3)
         
         if not potential_urls:
             print(f"No results found for {company}")
             results.append({"Company Name": company, "Crunchbase URL": "Not Found"})
             continue
-            
+        
         crunchbase_url = search_crunchbase_url(company, potential_urls)
         results.append({"Company Name": company, "Crunchbase URL": crunchbase_url})
         
-        pd.DataFrame(results).to_excel(OUTPUT_FILE, index=False)
+        updated_data = pd.DataFrame(results)
+        combined_data = pd.concat([existing_data, updated_data], ignore_index=True)
+        combined_data.to_excel(OUTPUT_FILE, index=False)
+        print(f"Data saved to {OUTPUT_FILE}")
         time.sleep(random.uniform(1, 3))
 
     return pd.DataFrame(results)
